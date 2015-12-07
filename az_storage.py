@@ -3,50 +3,57 @@
 # (c) Robert Forsström, robert@middleware.se
 
 
-from subprocess import  CalledProcessError, check_output, Popen, PIPE
+# From AzureStorage.py
+
 import json
 
 
-class AzureNotModifiable (Exception):
-    def __init__(self, msg):
-        self.msg=msg
+class AzureStorage(object):
+     def __init__(self, resource_group, name):
+         self.resourceGroup = resource_group
+         self.storageAccountName = name
+         self.connectionString = False
 
-class AzureClientException (Exception):
-    def __init__(self, msg):
-        self.msg=msg
+     def getConnectionString(self):
+         if self.connectionString==False:
+            azcs = AzureClient.run(["azure", "storage", "account", "connectionstring", "show", "--json",  "--resource-group", self.resourceGroup, self.storageAccountName])
+            if azcs["rc"] != 0:
+                raise AzureProvisionException(azcs["err"])
+            cs = json.loads (azcs["out"])
+            self.connectionString = cs["string"]
 
-class AzureProvisionException(Exception):
-    def __init__(self, msg):
-        self.msg=msg
+         return self.connectionString
+
+# End AzureStorage.py
+# From AzureStorageAccount.py
+import json
 
 
-class AzureStorage():
+class AzureStorageAccount(AzureStorage):
     def __init__(self, resource_group, name):
-        self.resource_group = resource_group
-        self.name = name.lower()
+        super(self.__class__, self).__init__(resource_group, name)
         self.modified= False
         self.provisioned = False
         self.accountType = ""
         self.creationTime = ""
         self.primaryEndpoints = ""
-        self.connectionString = False
 
         self.load()
 
     def load(self):
-        azr =  AzureClient.run(["azure", "storage", "account", "show", self.name, "--resource-group", self.resource_group, "--json"])
+        azr =  AzureClient.run(["azure", "storage", "account", "show", self.storageAccountName, "--resource-group", self.resourceGroup, "--json"])
 
         if azr["rc"] == 0:
             self.provisioned = True
             account = json.loads (azr["out"])
             self.location = account["location"]
 
-            ## Account type in the oject returned has thestorage format before the type: eg.
-            ## Standard_LRS = LRS, Standard_ZRS..., Premium_LRS = PLRS
+             ## Account type in the oject returned has thestorage format before the type: eg.
+             ## Standard_LRS = LRS, Standard_ZRS..., Premium_LRS = PLRS
             if account["accountType"] == "Premium_LRS":
                 self.accountType= "PLRS"
-            elif len(account["accountType"]) >9:
-                 self.accountType = account["accountType"][9:]
+            elif len(account["accountType"]) > 9:
+                self.accountType = account["accountType"][9:]
             else:
                 self.accountType = account["accountType"]
 
@@ -54,21 +61,21 @@ class AzureStorage():
             self.primaryEndpoints = account["primaryEndpoints"]
 
     def getFacts(self):
-        return dict (name=self.name,
-                location=self.location,
-                accountType=self.accountType,
-                creationTime=self.creationTime,
-                primaryEndpoints=self.primaryEndpoints,
-                resourceGroup=self.resource_group)
+        return dict (name=self.storageAccountName,
+                 location=self.location,
+                 accountType=self.accountType,
+                 creationTime=self.creationTime,
+                 primaryEndpoints=self.primaryEndpoints,
+                 resourceGroup=self.resourceGroup)
 
     def isProvisioned(self):
         return self.provisioned
 
     def getName(self, name):
-        return self.name
+        return self.storageAccountName
 
     def getResourceGroup(self, resource_group):
-        return self.resource_group
+        return self.resourceGroup
 
     def getLocation(self, location):
         return self.location
@@ -80,7 +87,7 @@ class AzureStorage():
 
     def setAccountType(self, accountType):
         if self.isProvisioned() and self.accountType != accountType:
-            azp = AzureClient.run(["azure", "storage", "account","set", "--resource-group", self.resource_group, "--type", self.accountType, self.name, "--json"])
+            azp = AzureClient.run(["azure", "storage", "account","set", "--resource-group", self.resourceGroup, "--type", self.accountType, self.storageAccountName, "--json"])
             if azp["rc"] != 0:
                 raise AzureProvisionException(azp["err"])
             self.modified = True;
@@ -96,30 +103,21 @@ class AzureStorage():
         return self.primaryEndpoints
 
     def provision(self):
-        azp = AzureClient.run(["azure", "storage", "account", "create", "--location", self.location, "--type", self.accountType, "--resource-group", self.resource_group, self.name, "--json"])
+        azp = AzureClient.run(["azure", "storage", "account", "create", "--location", self.location, "--type", self.accountType, "--resource-group", self.resourceGroup, self.storageAccountName, "--json"])
         if azp["rc"] != 0:
             raise AzureProvisionException(azp["err"])
         self.load()
         self.modified = True
 
     def deleteAccount (self):
-        azp = AzureClient.run(["azure", "storage", "account", "delete","--resource-group", self.resource_group, "--quiet",  "--json",  self.name])
+        azp = AzureClient.run(["azure", "storage", "account", "delete","--resource-group", self.resourceGroup, "--quiet",  "--json",  self.storageAccountName])
         if azp["rc"] != 0:
             raise AzureProvisionException(azp["err"])
         self.modified = True
 
-    def getConnectionString(self):
-        if self.connectionString==False:
-            azcs = AzureClient.run(["azure", "storage", "account", "connectionstring", "show", "--json",  "--resource-group", self.resource_group, self.name])
-            if azcs["rc"] != 0:
-                raise AzureProvisionException(azcs["err"])
-
-            cs = json.loads (azcs["out"])
-            self.connectionString = cs["string"]
-            
-        return self.connectionString
-
-
+# End AzureStorageAccount.py 
+# From AzureClient.py
+from subprocess import  CalledProcessError, check_output, Popen, PIPE
 
 class AzureClient ():
     @staticmethod
@@ -131,6 +129,30 @@ class AzureClient ():
         return dict (out=stdout, err=stderr, rc=azp.returncode)
 
 
+# End AzureClient.py
+#From AzureExcptions.py
+
+class AzureNotModifiable (Exception):
+    def __init__(self, msg):
+        self.msg=msg
+
+class AzureClientException (Exception):
+    def __init__(self, msg):
+        self.msg=msg
+
+class AzureProvisionException(Exception):
+    def __init__(self, msg):
+        self.msg=msg
+
+class AzureParamentersNotValid(Exception):
+    def __init__(self, msg):
+        self.msg=msg
+
+class AzureNotFound(Exception):
+    def __init__(self, msg):
+        self.msg=msg
+
+#End AzureExcptions.py
 
 def main():
 
@@ -149,7 +171,7 @@ def main():
 
 
     try:
-        azs = AzureStorage(module.params["resource_group"], module.params["name"])
+        azs = AzureStorageAccount(module.params["resource_group"], module.params["name"])
 
 
         if module.params["state"] == "present":
@@ -160,8 +182,6 @@ def main():
 
             if azs.isProvisioned() == False:
                 azs.provision()
-
-            print azs.getConnectionString();
 
             module.exit_json(changed=azs.modified, ansible_facts=azs.getFacts() )
 

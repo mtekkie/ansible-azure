@@ -81,6 +81,14 @@ class AzureProvisionException(Exception):
     def __init__(self, msg):
         self.msg=msg
 
+class AzureParamentersNotValid(Exception):
+    def __init__(self, msg):
+        self.msg=msg
+
+class AzureNotFound(Exception):
+    def __init__(self, msg):
+        self.msg=msg
+
 #End AzureExcptions.py
 
 

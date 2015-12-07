@@ -27,6 +27,9 @@ class AzureStorage(object):
 # End AzureStorage.py
 ## From AzureBlob.py
 
+import os
+import hashlib
+import base64
 
 class AzureBlob(AzureStorage):
     def __init__(self, resource_group, account, container, name):
@@ -37,9 +40,12 @@ class AzureBlob(AzureStorage):
 class AzureBlobOps():
 
     @staticmethod
-    def upload(localPath, dest , type):
-         #type = block, page, append
-        pass
+    def upload(localPath, blob , type):
+        if not os.path.isfile(localPath):
+            raise AzureNotFound("Local file not found: "+ localPath)
+        azcs = AzureClient.run(["azure", "storage", "blob", "upload", "--connection-string", blob.getConnectionString(),  "--container", blob.container, "--blob", blob.name,"--blobtype", type, "--json", "--quiet", "--file", localPath])
+        if azcs["rc"] != 0:
+            raise AzureNotFound("Upload failed: "+ azcs["err"])
 
     @staticmethod
     def exists(blob):
@@ -49,11 +55,53 @@ class AzureBlobOps():
         return True
 
     @staticmethod
-    def copy(blob):
-        pass
+    def copy(blob, dest):
+        azcs = AzureClient.run(["azure", "storage", "blob", "copy", "start", "--connection-string", blob.getConnectionString(),  "--source-container", blob.container, "--source-blob", blob.name,"--dest-connection-string", dest.getConnectionString(), "--dest-container", dest.container,  "--dest-blob", dest.name,  "--quiet", "--json"])
+        ## TODO: Wait until filecopy has succeeded.
 
-    def isSameAs(blob, srcBlob):
-        pass
+        if azcs["rc"] != 0:
+            raise AzureNotFound("Copy failed"+ azcs["err"])
+
+    @staticmethod
+    def blobIsSameAs(blob1, blob2):
+        azcs1 = AzureClient.run(["azure", "storage", "blob", "show", "--connection-string", blob1.getConnectionString(),  "--container", blob1.container, "--blob", blob1.name, "--json"])
+        azcs2 = AzureClient.run(["azure", "storage", "blob", "show", "--connection-string", blob2.getConnectionString(),  "--container", blob2.container, "--blob", blob2.name, "--json"])
+
+        if azcs1["rc"] != 0 or azcs2["rc"] != 0 :
+            raise AzureNotFound("Comparison failed "+ azcs1["err"] + azcs2["err"])
+        b1res = json.loads (azcs1["out"])
+        b2res = json.loads (azcs2["out"])
+
+        if b1res["contentMD5"] == b2res["contentMD5"]:
+            return True
+        return False
+
+    @staticmethod
+    def localFileIsSameAs(localPath, blob):
+
+        if not os.path.isfile(localPath):
+            raise AzureNotFound("Local file not found: "+ localPath)
+
+        azcs1 = AzureClient.run(["azure", "storage", "blob", "show", "--connection-string", blob.getConnectionString(),  "--container", blob.container, "--blob", blob.name, "--json"])
+        if azcs1["rc"] != 0:
+            raise AzureNotFound("Comparison failed "+ azcs1["err"])
+
+        b1res = json.loads (azcs1["out"])
+
+        fileMD5 = AzureBlobOps._md5(localPath)
+
+        if b1res["contentMD5"] == base64.b64encode(fileMD5):
+            return True
+        return False
+
+
+    @staticmethod
+    def _md5(fname):
+        hash = hashlib.md5()
+        with open(fname, "rb") as f:
+            for chunk in iter(lambda: f.read(4096), b""):
+                hash.update(chunk)
+        return hash.digest()
 
     @staticmethod
     def delete(blob):
@@ -88,6 +136,14 @@ class AzureProvisionException(Exception):
     def __init__(self, msg):
         self.msg=msg
 
+class AzureParamentersNotValid(Exception):
+    def __init__(self, msg):
+        self.msg=msg
+
+class AzureNotFound(Exception):
+    def __init__(self, msg):
+        self.msg=msg
+
 #End AzureExcptions.py
 
 
@@ -100,9 +156,9 @@ def main():
             container           = dict(required=True),
             resource_group      = dict(required=True),
             storage_account     = dict(required=True),
-            blob_type           = dict(required=False),
-            src_name            = dict(required=False),
-            src_account         = dict(required=False),
+            upload_blob_type    = dict(default='block', choices=['block', 'page', 'append']),
+            src_blob_name       = dict(required=False),
+            src_storage_account = dict(required=False),
             src_container       = dict(required=False),
             src_local_path      = dict(required=False),
             overwrite           = dict(default=False, choices=BOOLEANS),
@@ -112,25 +168,78 @@ def main():
     )
 
     try:
-        azs = AzureBlob(module.params["resource_group"], module.params["storage_account"], module.params["container"],  module.params["name"])
+        azb = AzureBlob(module.params["resource_group"], module.params["storage_account"], module.params["container"],  module.params["name"])
+        azb_src = None
+
+        blobExist= AzureBlobOps.exists(azb)
 
         if module.params["state"] == "present":
-            if AzureBlobOps.exists(azs):
+
+            if blobExist:
                 module.exit_json(changed=False)
 
+            if not blobExist and module.params["src_blob_name"] is not None:
+                src_storage_account = module.params["storage_account"] if module.params["src_storage_account"] is None else module.params["src_storage_account"]
+                src_container = module.params["container"] if module.params["src_container"] is None else module.params["src_container"]
 
-            if not AzureBlobOps.exists(azs) and module.params["src_name"] is not None :
-                module.exit_json(changed=False)
+                azb_src = AzureBlob(module.params["resource_group"],src_storage_account, src_container,  module.params["src_blob_name"])
 
-        module.fail_json(msg="Hello mr")
+                if AzureBlobOps.exists(azb_src):
+                    AzureBlobOps.copy (azb_src, azb)
+                    module.exit_json(changed=True)
+                else:
+                    module.fail_json(msg="Can not find source blob: "+module.params["src_blob_name"]+ " in container "+src_container + " on account " +src_storage_account)
+
+            if not blobExist and module.params["src_local_path"] is not None:
+                AzureBlobOps.upload(module.params["src_local_path"], azb, module.params["upload_blob_type"] )
+                module.exit_json(changed=True)
+
+            module.fail_json(msg="Blob does not exist.")
+
+
 
         if module.params["state"] == "absent":
-            pass
+            if blobExist:
+                AzureBlobOps.delete(azb);
+                module.exit_json(changed=True)
+
+            module.exit_json(changed=False)
+
+        if module.params["state"] == "same_as":
+            if module.params["src_blob_name"] is not None:
+                src_storage_account = module.params["storage_account"] if module.params["src_storage_account"] is None else module.params["src_storage_account"]
+                src_container = module.params["container"] if module.params["src_container"] is None else module.params["src_container"]
+                azb_src = AzureBlob(module.params["resource_group"],src_storage_account, src_container,  module.params["src_blob_name"])
+
+                if AzureBlobOps.exists(azb_src):
+                    if AzureBlobOps.blobIsSameAs (azb_src, azb):
+                        module.exit_json(changed=False)
+                    else:
+                        if module.boolean(module.params["overwrite"]):
+                            AzureBlobOps.copy(azb_src, azb)
+                            module.exit_json(changed=True)
+                        else:
+                            module.fail_json(msg="The two blobs are not the same: "+azb.name +" != "+azb_src.name)
+                else:
+                    module.fail_json(msg="Can not find source blob: "+module.params["src_blob_name"]+ " in container "+src_container + " on account " +src_storage_account)
+
+            if module.params["src_local_path"] is not None:
+                if AzureBlobOps.localFileIsSameAs (module.params["src_local_path"], azb):
+                    module.exit_json(changed=False)
+                else:
+                    if module.boolean(module.params["overwrite"]):
+                        AzureBlobOps.upload(module.params["src_local_path"], azb, module.params["upload_blob_type"])
+                        module.exit_json(changed=True)
+                    else:
+                        module.fail_json(msg="The blob and file are not the same: "+azb.name +" != "+module.params["src_local_path"])
 
     except AzureClientException as e:
         module.fail_json(msg=e.msg)
 
     except AzureProvisionException as e:
+        module.fail_json(msg=e.msg)
+
+    except AzureNotFound as e:
         module.fail_json(msg=e.msg)
 
 from ansible.module_utils.basic import *
