@@ -71,6 +71,8 @@ class AzureVirtualNetwork(object):
         azp = AzureClient.run(["azure", "network", "vnet", "create", "--resource-group", self.resourceGroup ,"--location", self.location, "--name", self.name , "--address-prefixes", self.addressSpace, "--json"])
         if azp["rc"] != 0:
             raise AzureProvisionException(azp["err"])
+        self.load()
+        self.setDNSServers(self.dnsServers)
         self.modified = True
 
     def delete (self):
