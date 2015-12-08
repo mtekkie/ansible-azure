@@ -183,8 +183,7 @@ def main():
             if azs.isProvisioned() == False:
                 azs.provision()
 
-            module.exit_json(changed=azs.modified, ansible_facts=azs.getFacts() )
-
+            module.exit_json(changed=azs.modified, ansible_facts=azs.getFacts())
 
         if module.params["state"] == "absent":
             azs.deleteAccount();

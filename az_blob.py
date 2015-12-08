@@ -2,6 +2,8 @@
 
 # (c) Robert Forsström, robert@middleware.se
 
+#TODO: Both present with a src_blob_name and same_as builds the
+# BlobObject this should be put in to an function. Also add a posibillity to just define the container as src.
 
 # From AzureStorage.py
 
