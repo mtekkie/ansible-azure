@@ -12,6 +12,7 @@ class AzureVirtualNetwork(object):
         self.name = name
         self.resourceGroup = resource_group
         self.modified= False
+        self.msg = []
         self.provisioned = False
         self.accountType = False
         self.creationTime = False
@@ -50,11 +51,13 @@ class AzureVirtualNetwork(object):
         if not self.provisioned:
             self.dnsServers = dnsServers
         else:
+
             if dnsServers != ",".join(self.dhcpOptions["dnsServers"]):
                 azp = AzureClient.run(["azure", "network", "vnet", "set", "--resource-group", self.resourceGroup , "--name", self.name , "--dns-servers", dnsServers, "--json"])
                 if azp["rc"] != 0:
                     raise AzureProvisionException(azp["err"])
                 self.modified = True
+                self.msg.append("Added DNS Servers " + dnsServers )
 
     def setAddressPrefixes(self, prefixes):
         if not self.provisioned:
@@ -66,14 +69,16 @@ class AzureVirtualNetwork(object):
             if azp["rc"] != 0:
                 raise AzureProvisionException(azp["err"])
             self.modified = True
+            self.msg.append("Added addressPrefixes " + prefixes )
 
     def provision(self):
         azp = AzureClient.run(["azure", "network", "vnet", "create", "--resource-group", self.resourceGroup ,"--location", self.location, "--name", self.name , "--address-prefixes", self.addressSpace, "--json"])
         if azp["rc"] != 0:
             raise AzureProvisionException(azp["err"])
         self.load()
-        self.setDNSServers(self.dnsServers)
         self.modified = True
+        self.msg.append("Provisioned network")
+
 
     def delete (self):
         azp = AzureClient.run(["azure", "network", "vnet", "delete", "--resource-group", self.resourceGroup , "--name", self.name , "--json", "--quiet"])
@@ -88,6 +93,40 @@ class AzureVirtualNetwork(object):
         if self.isProvisioned() and location != self.location:
             raise AzureNotModifiable ("Not possible to move an existing network to a another location. From: " + self.location + " to " +location)
         self.location = location
+
+    def addSubnet (self, name, addressPrefix):
+        ## Is the subnet aleady present?
+        for subnet in self.subnets:
+            if subnet["name"] == name:
+                ## Subnet is already present. Does it have the correct configuration?
+                if subnet["addressPrefix"] != addressPrefix:
+                    #Exists, but it does not have the correct configuration.
+                    azp = AzureClient.run(["azure", "network", "vnet", "subnet","set" , "--resource-group", self.resourceGroup , "--name", name , "--address-prefix", addressPrefix, "--vnet-name", self.name,  "--json"])
+                    if azp["rc"] != 0:
+                        raise AzureProvisionException(azp["err"])
+                    self.modified = True
+                    self.msg.append("Changed subnets addressPrefix: " + name +"("+addressPrefix+")"  )
+                    return
+                else:
+                    #Nothing to do. Return.
+                    return
+
+        # Subnet does not exist. Create.
+        azp = AzureClient.run(["azure", "network", "vnet", "subnet", "create" , "--resource-group", self.resourceGroup , "--name", name , "--address-prefix", addressPrefix, "--vnet-name", self.name,  "--json"])
+        if azp["rc"] != 0:
+            raise AzureProvisionException(azp["err"])
+        self.modified = True
+        self.msg.append("Created Subnet: " + name +"("+addressPrefix+")"  )
+
+    def deleteSubnet(self, name):
+        ## Is the subnet present?
+        for subnet in self.subnets:
+            if subnet["name"] == name:
+                ## Subnet is present, delete!
+                azp = AzureClient.run(["azure", "network", "vnet", "subnet", "delete" , "--resource-group", self.resourceGroup , "--name", name , "--vnet-name", self.name,  "--json", "--quiet"])
+                if azp["rc"] != 0:
+                    raise AzureProvisionException(azp["err"])
+                self.modified = True
 # From AzureClient.py
 from subprocess import  CalledProcessError, check_output, Popen, PIPE
 
@@ -134,9 +173,10 @@ def main():
             name                    = dict(required=True),
             resource_group          = dict(required=True),
             location                = dict(required=True),
-            address_spaces          = dict(required=True),
-            replace_address_spaces  = dict(default=False, choices=BOOLEANS),
-            dns_servers             = dict(required=False),
+            address_spaces          = dict(required=True), #Comma seperated
+            subnet_name             = dict(required=False),
+            subnet_prefix           = dict(required=False),
+            dns_servers             = dict(required=False), #Comma seperated
             username                = dict(required=False),
             password                = dict(required=False)
         )
@@ -150,13 +190,17 @@ def main():
           azvnet.setLocation(module.params["location"])
           azvnet.setAddressPrefixes(module.params["address_spaces"])
 
-          if module.params["dns_servers"] is not None:
-              azvnet.setDNSServers(module.params["dns_servers"])
 
           if not azvnet.isProvisioned():
               azvnet.provision()
 
-          module.exit_json(changed=azvnet.modified)
+          if module.params["dns_servers"] is not None:
+              azvnet.setDNSServers(module.params["dns_servers"])
+
+          if module.params["subnet_name"] is not None:
+              azvnet.addSubnet(module.params["subnet_name"], module.params["subnet_prefix"])
+
+          module.exit_json(changed=azvnet.modified, msg=azvnet.msg)
 
 
 
@@ -165,6 +209,10 @@ def main():
                 azvnet.delete()
                 module.exit_json(changed=True)
             module.exit_json(changed=False)
+
+        if module.params["subnet_name"] is None:
+            azvnet.deleteSubnet(module.params["subnet_name"])
+
 
     except AzureNotModifiable as e:
         module.fail_json(msg=e.msg)
