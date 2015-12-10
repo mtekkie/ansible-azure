@@ -3,7 +3,9 @@
 # (c) Robert Forsström, robert@middleware.se
 
 
-#!/usr/bin/python
+
+
+#---- From Library File: AzureVirtualNetwork.py ----
 
 # (c) Robert Forsstrom, robert@middleware.se
 
@@ -127,7 +129,16 @@ class AzureVirtualNetwork(object):
                 if azp["rc"] != 0:
                     raise AzureProvisionException(azp["err"])
                 self.modified = True
-# From AzureClient.py
+
+
+#---- EOF: AzureVirtualNetwork.py ---
+
+
+
+#---- From Library File: AzureClient.py ----
+
+
+
 from subprocess import  CalledProcessError, check_output, Popen, PIPE
 
 class AzureClient ():
@@ -140,8 +151,12 @@ class AzureClient ():
         return dict (out=stdout, err=stderr, rc=azp.returncode)
 
 
-# End AzureClient.py
-#From AzureExcptions.py
+#---- EOF: AzureClient.py ---
+
+
+
+#---- From Library File: AzureExceptions.py ----
+
 
 class AzureNotModifiable (Exception):
     def __init__(self, msg):
@@ -163,7 +178,9 @@ class AzureNotFound(Exception):
     def __init__(self, msg):
         self.msg=msg
 
-#End AzureExcptions.py
+
+#---- EOF: AzureExceptions.py ---
+
 
 
 def main():

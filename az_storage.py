@@ -3,7 +3,11 @@
 # (c) Robert Forsström, robert@middleware.se
 
 
-# From AzureStorage.py
+
+
+#---- From Library File: AzureStorage.py ----
+
+
 
 import json
 
@@ -24,8 +28,14 @@ class AzureStorage(object):
 
          return self.connectionString
 
-# End AzureStorage.py
-# From AzureStorageAccount.py
+
+#---- EOF: AzureStorage.py ---
+
+
+
+#---- From Library File: AzureStorageAccount.py ----
+
+
 import json
 
 
@@ -115,8 +125,15 @@ class AzureStorageAccount(AzureStorage):
             raise AzureProvisionException(azp["err"])
         self.modified = True
 
-# End AzureStorageAccount.py 
-# From AzureClient.py
+
+#---- EOF: AzureStorageAccount.py ---
+
+
+
+#---- From Library File: AzureClient.py ----
+
+
+
 from subprocess import  CalledProcessError, check_output, Popen, PIPE
 
 class AzureClient ():
@@ -129,8 +146,12 @@ class AzureClient ():
         return dict (out=stdout, err=stderr, rc=azp.returncode)
 
 
-# End AzureClient.py
-#From AzureExcptions.py
+#---- EOF: AzureClient.py ---
+
+
+
+#---- From Library File: AzureExceptions.py ----
+
 
 class AzureNotModifiable (Exception):
     def __init__(self, msg):
@@ -152,7 +173,9 @@ class AzureNotFound(Exception):
     def __init__(self, msg):
         self.msg=msg
 
-#End AzureExcptions.py
+
+#---- EOF: AzureExceptions.py ---
+
 
 def main():
 

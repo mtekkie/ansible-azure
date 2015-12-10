@@ -5,7 +5,11 @@
 #TODO: Both present with a src_blob_name and same_as builds the
 # BlobObject this should be put in to an function. Also add a posibillity to just define the container as src.
 
-# From AzureStorage.py
+
+
+#---- From Library File: AzureStorage.py ----
+
+
 
 import json
 
@@ -26,8 +30,13 @@ class AzureStorage(object):
 
          return self.connectionString
 
-# End AzureStorage.py
-## From AzureBlob.py
+
+#---- EOF: AzureStorage.py ---
+
+
+
+#---- From Library File: AzureBlob.py ----
+
 
 import os
 import hashlib
@@ -109,8 +118,15 @@ class AzureBlobOps():
     def delete(blob):
         pass
 
-## End AzureBlob.py
-# From AzureClient.py
+
+#---- EOF: AzureBlob.py ---
+
+
+
+#---- From Library File: AzureClient.py ----
+
+
+
 from subprocess import  CalledProcessError, check_output, Popen, PIPE
 
 class AzureClient ():
@@ -123,8 +139,12 @@ class AzureClient ():
         return dict (out=stdout, err=stderr, rc=azp.returncode)
 
 
-# End AzureClient.py
-#From AzureExcptions.py
+#---- EOF: AzureClient.py ---
+
+
+
+#---- From Library File: AzureExceptions.py ----
+
 
 class AzureNotModifiable (Exception):
     def __init__(self, msg):
@@ -146,7 +166,9 @@ class AzureNotFound(Exception):
     def __init__(self, msg):
         self.msg=msg
 
-#End AzureExcptions.py
+
+#---- EOF: AzureExceptions.py ---
+
 
 
 def main():
